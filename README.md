@@ -33,29 +33,21 @@ Package.swift                        SwiftPM manifest
 - Swift 5.10
 - iOS 17+ or macOS 14+
 - Metal-capable Apple platform for rendering paths and GPU smoke coverage
-- Sibling checkouts of `MTK` and `DICOM-Decoder`
+- Public SwiftPM dependencies:
+  - [`MTK`](https://github.com/ThalesMMS/MTK) exact `1.2.1`
+  - [`DICOM-Decoder`](https://github.com/ThalesMMS/DICOM-Decoder) exact `1.3.1`
 
-The current manifest uses path dependencies:
+## Related Repositories
 
-```swift
-.package(path: "../MTK")
-.package(name: "DICOM-Decoder", path: "../DICOM-Decoder")
-```
+- [MTK](https://github.com/ThalesMMS/MTK) — Metal rendering core, SwiftUI viewports, and synthetic fixtures.
+- [DICOM-Decoder](https://github.com/ThalesMMS/DICOM-Decoder) — Swift DICOM parsing, ZIP loading, metadata extraction, and decoded series assembly.
+- [MTKDicomBridge](https://github.com/ThalesMMS/MTKDicomBridge) — This bridge package for converting DICOM-Decoder models into MTK datasets and viewer state.
+- [MTK-Demo](https://github.com/ThalesMMS/MTK-Demo) — Public demo app that consumes the release-tagged packages together.
 
-For local development, keep the repositories side by side:
-
-```text
-ParentDirectory/
-  MTK/
-  DICOM-Decoder/
-  MTKDicomBridge/
-```
-
-## Add To A Local Swift Package
+## Add Via Swift Package Manager
 
 ```swift
-// Package.swift
-.package(path: "../MTKDicomBridge")
+.package(url: "https://github.com/ThalesMMS/MTKDicomBridge.git", exact: "1.0.0")
 ```
 
 Then depend on the library product:
@@ -68,6 +60,8 @@ Then depend on the library product:
     ]
 )
 ```
+
+SwiftPM resolves MTK and DICOM-Decoder from the exact public tags declared by this package. Add a direct `DICOM-Decoder` dependency only if your application imports `DicomCore` itself.
 
 ## Basic Volume Import
 
