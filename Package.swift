@@ -21,7 +21,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ThalesMMS/MTK.git", exact: "1.3.1"),
-        .package(url: "https://github.com/ThalesMMS/DICOM-Swift.git", exact: "1.3.3")
+        .package(url: "https://github.com/ThalesMMS/DICOM-Swift.git", exact: "1.3.4")
     ],
     targets: [
         .target(
