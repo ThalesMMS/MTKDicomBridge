@@ -34,8 +34,8 @@ Package.swift                        SwiftPM manifest
 - iOS 17+ or macOS 14+
 - Metal-capable Apple platform for rendering paths and GPU smoke coverage
 - Public SwiftPM dependencies:
-  - [`MTK`](https://github.com/ThalesMMS/MTK) exact `1.2.1`
-  - [`DICOM-Decoder`](https://github.com/ThalesMMS/DICOM-Decoder) exact `1.3.1`
+  - [`MTK`](https://github.com/ThalesMMS/MTK) exact `1.3.1`
+  - [`DICOM-Decoder`](https://github.com/ThalesMMS/DICOM-Decoder) exact `1.3.3`
 
 ## Related Repositories
 
@@ -47,7 +47,7 @@ Package.swift                        SwiftPM manifest
 ## Add Via Swift Package Manager
 
 ```swift
-.package(url: "https://github.com/ThalesMMS/MTKDicomBridge.git", exact: "1.0.0")
+.package(url: "https://github.com/ThalesMMS/MTKDicomBridge.git", exact: "1.0.2")
 ```
 
 Then depend on the library product:
