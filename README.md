@@ -5,9 +5,9 @@
 ![macOS 14+](https://img.shields.io/badge/macOS-14%2B-lightgrey.svg)
 ![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)
 
-MTKDicomBridge connects `DICOM-Decoder` data models to MTK's Metal-native rendering and clinical viewer APIs. It keeps DICOM parsing outside `MTKCore` while providing ready-to-use adapters for volume import, overlays, structured reports, presentation states, clinical non-image objects, and viewer annotation round trips.
+MTKDicomBridge connects `DICOM-Swift` data models to MTK's Metal-native rendering and clinical viewer APIs. It keeps DICOM parsing outside `MTKCore` while providing ready-to-use adapters for volume import, overlays, structured reports, presentation states, clinical non-image objects, and viewer annotation round trips.
 
-Use this package when your app already depends on MTK for rendering and wants the default Swift DICOM ingestion path from `DICOM-Decoder`.
+Use this package when your app already depends on MTK for rendering and wants the default Swift DICOM ingestion path from `DICOM-Swift`.
 
 ## What It Provides
 
@@ -34,20 +34,20 @@ Package.swift                        SwiftPM manifest
 - iOS 17+ or macOS 14+
 - Metal-capable Apple platform for rendering paths and GPU smoke coverage
 - Public SwiftPM dependencies:
-  - [`MTK`](https://github.com/ThalesMMS/MTK) exact `1.3.1`
-  - [`DICOM-Decoder`](https://github.com/ThalesMMS/DICOM-Decoder) exact `1.3.3`
+  - [`MTK`](https://github.com/ThalesMMS/MTK) exact `1.2.1`
+  - [`DICOM-Swift`](https://github.com/ThalesMMS/DICOM-Swift) exact `1.3.1`
 
 ## Related Repositories
 
 - [MTK](https://github.com/ThalesMMS/MTK) — Metal rendering core, SwiftUI viewports, and synthetic fixtures.
-- [DICOM-Decoder](https://github.com/ThalesMMS/DICOM-Decoder) — Swift DICOM parsing, ZIP loading, metadata extraction, and decoded series assembly.
-- [MTKDicomBridge](https://github.com/ThalesMMS/MTKDicomBridge) — This bridge package for converting DICOM-Decoder models into MTK datasets and viewer state.
+- [DICOM-Swift](https://github.com/ThalesMMS/DICOM-Swift) — Swift DICOM parsing, ZIP loading, metadata extraction, and decoded series assembly.
+- [MTKDicomBridge](https://github.com/ThalesMMS/MTKDicomBridge) — This bridge package for converting DICOM-Swift models into MTK datasets and viewer state.
 - [MTK-Demo](https://github.com/ThalesMMS/MTK-Demo) — Public demo app that consumes the release-tagged packages together.
 
 ## Add Via Swift Package Manager
 
 ```swift
-.package(url: "https://github.com/ThalesMMS/MTKDicomBridge.git", exact: "1.0.2")
+.package(url: "https://github.com/ThalesMMS/MTKDicomBridge.git", exact: "1.0.0")
 ```
 
 Then depend on the library product:
@@ -61,7 +61,7 @@ Then depend on the library product:
 )
 ```
 
-SwiftPM resolves MTK and DICOM-Decoder from the exact public tags declared by this package. Add a direct `DICOM-Decoder` dependency only if your application imports `DicomCore` itself.
+SwiftPM resolves MTK and DICOM-Swift from the exact public tags declared by this package. Add a direct `DICOM-Swift` dependency only if your application imports `DicomCore` itself.
 
 ## Basic Volume Import
 

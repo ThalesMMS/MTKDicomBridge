@@ -21,7 +21,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/ThalesMMS/MTK.git", exact: "1.3.1"),
-        .package(url: "https://github.com/ThalesMMS/DICOM-Decoder.git", exact: "1.3.3")
+        .package(url: "https://github.com/ThalesMMS/DICOM-Swift.git", exact: "1.3.3")
     ],
     targets: [
         .target(
@@ -29,7 +29,7 @@ let package = Package(
             dependencies: [
                 .product(name: "MTKCore", package: "MTK"),
                 .product(name: "MTKUI", package: "MTK"),
-                .product(name: "DicomCore", package: "DICOM-Decoder")
+                .product(name: "DicomCore", package: "DICOM-Swift")
             ],
             path: "Sources/MTKDicomBridge"
         ),
@@ -39,7 +39,7 @@ let package = Package(
                 "MTKDicomBridge",
                 .product(name: "MTKCore", package: "MTK"),
                 .product(name: "MTKUI", package: "MTK"),
-                .product(name: "DicomCore", package: "DICOM-Decoder")
+                .product(name: "DicomCore", package: "DICOM-Swift")
             ],
             path: "Tests/MTKDicomBridgeTests"
         ),
@@ -48,7 +48,7 @@ let package = Package(
             dependencies: [
                 "MTKDicomBridge",
                 .product(name: "MTKCore", package: "MTK"),
-                .product(name: "DicomCore", package: "DICOM-Decoder")
+                .product(name: "DicomCore", package: "DICOM-Swift")
             ],
             path: "Benchmarks/VolumeRendererComparison",
             resources: [
