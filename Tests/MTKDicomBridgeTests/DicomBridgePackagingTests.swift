@@ -14,6 +14,17 @@ final class DicomBridgePackagingTests: XCTestCase {
         XCTAssertTrue(typedImporter === importer)
     }
 
+    func testSegmentationIndexAlignmentToleranceIsNamed() throws {
+        let source = try String(
+            contentsOf: Self.packageRoot.appendingPathComponent("Sources/MTKDicomBridge/DicomSegmentationVolumeLayerBuilder.swift"),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains("private static let indexAlignmentTolerance: Float = 0.01"))
+        XCTAssertTrue(source.contains("abs(lhs - rhs) <= indexAlignmentTolerance"))
+        XCTAssertFalse(source.contains("abs(lhs - rhs) <= 0.01"))
+    }
+
     func testDecodedSeriesMapsToVolumeDataset() {
         let modalityVoxels = [Int16]([-1024, 0, 128, 512]).withUnsafeBytes { Data($0) }
         let rawVoxels = [UInt16]([0, 1024, 1152, 1536]).withUnsafeBytes { Data($0) }
@@ -330,6 +341,146 @@ final class DicomBridgePackagingTests: XCTestCase {
         XCTAssertTrue(surfaceLayer.mesh.isRenderable)
         XCTAssertEqual(surfaceLayer.mesh.coordinateSpace, .worldMillimeters)
         XCTAssertNotNil(surfaceLayer.mesh.bounds)
+    }
+
+    func testDicomSegmentationLabelmapSortsStackPositionsIntoBaseDepth() throws {
+        let baseDataset = makeBaseDataset(width: 2, height: 1, depth: 4)
+        let segmentation = DicomSegmentation(
+            sopInstanceUID: "2.25.stack-order",
+            segmentationType: .binary,
+            rows: 1,
+            columns: 2,
+            segments: [
+                DicomSegment(number: 1, label: "Liver"),
+                DicomSegment(number: 2, label: "Vessel")
+            ],
+            frames: [
+                DicomSegmentationFrame(
+                    index: 0,
+                    segmentNumber: 1,
+                    geometry: segmentationGeometry(frameIndex: 0, stackPosition: 3),
+                    pixelData: .binary([1, 0])
+                ),
+                DicomSegmentationFrame(
+                    index: 1,
+                    segmentNumber: 1,
+                    geometry: segmentationGeometry(frameIndex: 1, stackPosition: 4),
+                    pixelData: .binary([0, 1])
+                ),
+                DicomSegmentationFrame(
+                    index: 2,
+                    segmentNumber: 2,
+                    geometry: segmentationGeometry(frameIndex: 2, stackPosition: 1),
+                    pixelData: .binary([1, 1])
+                ),
+                DicomSegmentationFrame(
+                    index: 3,
+                    segmentNumber: 2,
+                    geometry: segmentationGeometry(frameIndex: 3, stackPosition: 2),
+                    pixelData: .binary([0, 1])
+                )
+            ]
+        )
+
+        let labelmap = try DicomSegmentationVolumeLayerBuilder.makeLabelmapVolume(
+            from: segmentation,
+            alignedTo: baseDataset,
+            options: DicomSegmentationVolumeLayerOptions(includeSurfaceMeshLayers: false)
+        )
+
+        XCTAssertEqual(labelmap.dataset.dimensions, VolumeDimensions(width: 2, height: 1, depth: 4))
+        XCTAssertEqual(
+            littleEndianUInt16Values(labelmap.dataset.data),
+            [
+                2, 2,
+                0, 2,
+                1, 0,
+                0, 1
+            ]
+        )
+    }
+
+    func testDicomSegmentationSparsePositionsExpandToBaseDepth() throws {
+        let baseDataset = makeBaseDataset(
+            width: 1,
+            height: 1,
+            depth: 5,
+            spacing: VolumeSpacing(x: 1, y: 1, z: 2),
+            origin: SIMD3<Float>(0, 0, 10)
+        )
+        let segmentation = DicomSegmentation(
+            sopInstanceUID: "2.25.sparse-seg",
+            segmentationType: .binary,
+            rows: 1,
+            columns: 1,
+            segments: [
+                DicomSegment(number: 1, label: "Sparse")
+            ],
+            frames: [
+                DicomSegmentationFrame(
+                    index: 0,
+                    segmentNumber: 1,
+                    geometry: segmentationGeometry(
+                        frameIndex: 0,
+                        stackPosition: 5,
+                        imagePosition: SIMD3<Double>(0, 0, 18)
+                    ),
+                    pixelData: .binary([1])
+                ),
+                DicomSegmentationFrame(
+                    index: 1,
+                    segmentNumber: 1,
+                    geometry: segmentationGeometry(
+                        frameIndex: 1,
+                        stackPosition: 3,
+                        imagePosition: SIMD3<Double>(0, 0, 14)
+                    ),
+                    pixelData: .binary([1])
+                )
+            ]
+        )
+
+        let labelmap = try DicomSegmentationVolumeLayerBuilder.makeLabelmapVolume(
+            from: segmentation,
+            alignedTo: baseDataset,
+            options: DicomSegmentationVolumeLayerOptions(includeSurfaceMeshLayers: false)
+        )
+
+        XCTAssertEqual(labelmap.dataset.dimensions, VolumeDimensions(width: 1, height: 1, depth: 5))
+        XCTAssertEqual(littleEndianUInt16Values(labelmap.dataset.data), [0, 0, 1, 0, 1])
+        XCTAssertEqual(labelmap.dataset.imageData.origin, baseDataset.imageData.origin)
+    }
+
+    func testDicomSegmentationRejectsSparseFramesWithoutAlignmentGeometry() {
+        let baseDataset = makeBaseDataset(width: 1, height: 1, depth: 3)
+        let segmentation = DicomSegmentation(
+            sopInstanceUID: "2.25.sparse-no-geometry",
+            segmentationType: .binary,
+            rows: 1,
+            columns: 1,
+            segments: [
+                DicomSegment(number: 1, label: "Sparse")
+            ],
+            frames: [
+                DicomSegmentationFrame(index: 0, segmentNumber: 1, pixelData: .binary([1])),
+                DicomSegmentationFrame(index: 1, segmentNumber: 1, pixelData: .binary([1]))
+            ]
+        )
+
+        XCTAssertThrowsError(
+            try DicomSegmentationVolumeLayerBuilder.makeLabelmapVolume(
+                from: segmentation,
+                alignedTo: baseDataset,
+                options: DicomSegmentationVolumeLayerOptions(includeSurfaceMeshLayers: false)
+            )
+        ) { error in
+            guard case let DicomSegmentationVolumeLayerBridgeError.invalidFrameGeometry(frameIndex, reason) = error else {
+                XCTFail("Expected invalidFrameGeometry, got \(error)")
+                return
+            }
+            XCTAssertEqual(frameIndex, 0)
+            XCTAssertTrue(reason.contains("missing Image Position"))
+        }
     }
 
     func testDicomRTStructureSetMapsToContourOverlay() {
@@ -824,6 +975,57 @@ final class DicomBridgePackagingTests: XCTestCase {
         return try XCTUnwrap(decoder.segmentation)
     }
 
+    private func makeBaseDataset(
+        width: Int,
+        height: Int,
+        depth: Int,
+        spacing: VolumeSpacing = VolumeSpacing(x: 1, y: 1, z: 1),
+        origin: SIMD3<Float> = .zero
+    ) -> VolumeDataset {
+        VolumeDataset(
+            data: [Int16](repeating: 0, count: width * height * depth).withUnsafeBytes { Data($0) },
+            dimensions: VolumeDimensions(width: width, height: height, depth: depth),
+            spacing: spacing,
+            pixelFormat: .int16Signed,
+            orientation: VolumeOrientation(
+                row: SIMD3<Float>(1, 0, 0),
+                column: SIMD3<Float>(0, 1, 0),
+                origin: origin
+            ),
+            clinicalMetadata: ClinicalImageMetadata(
+                modality: "CT",
+                frameOfReferenceUID: "2.25.frame"
+            )
+        )
+    }
+
+    private func segmentationGeometry(
+        frameIndex: Int,
+        stackPosition: Int? = nil,
+        imagePosition: SIMD3<Double>? = nil
+    ) -> DicomFrameGeometry {
+        let frameContent = stackPosition.map {
+            DicomFrameContent(
+                dimensionIndexValues: [],
+                stackID: nil,
+                inStackPositionNumber: $0,
+                temporalPositionIndex: nil,
+                frameAcquisitionNumber: nil
+            )
+        }
+        return DicomFrameGeometry(
+            frameIndex: frameIndex,
+            functionalGroups: DicomFrameFunctionalGroups(
+                frameContent: frameContent,
+                planePosition: imagePosition.map { DicomPlanePosition(imagePositionPatient: $0) },
+                planeOrientation: DicomPlaneOrientation(
+                    row: SIMD3<Double>(1, 0, 0),
+                    column: SIMD3<Double>(0, 1, 0)
+                )
+            )
+        )!
+    }
+
     private func makeProgressiveUpdate(index: Int,
                                        quality: ProgressiveVolumeQuality,
                                        fraction: Double,
@@ -898,5 +1100,12 @@ final class DicomBridgePackagingTests: XCTestCase {
         stride(from: 0, to: data.count, by: 2).map { offset in
             UInt16(data[offset]) | (UInt16(data[offset + 1]) << 8)
         }
+    }
+
+    private static var packageRoot: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
     }
 }

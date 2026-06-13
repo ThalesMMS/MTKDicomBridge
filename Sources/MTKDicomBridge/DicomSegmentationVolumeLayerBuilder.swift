@@ -7,6 +7,8 @@ public enum DicomSegmentationVolumeLayerBridgeError: Error, Equatable, Localized
     case emptySegmentation
     case invalidDimensions(columns: Int, rows: Int, baseWidth: Int, baseHeight: Int)
     case invalidFramePixelCount(frameIndex: Int, expected: Int, actual: Int)
+    case invalidFrameGeometry(frameIndex: Int, reason: String)
+    case frameSliceOutOfBounds(frameIndex: Int, sliceIndex: Int, baseDepth: Int)
 
     public var errorDescription: String? {
         switch self {
@@ -16,6 +18,10 @@ public enum DicomSegmentationVolumeLayerBridgeError: Error, Equatable, Localized
             return "DICOM SEG dimensions \(columns)x\(rows) do not match base volume \(baseWidth)x\(baseHeight)."
         case let .invalidFramePixelCount(frameIndex, expected, actual):
             return "DICOM SEG frame \(frameIndex) has \(actual) pixels; expected \(expected)."
+        case let .invalidFrameGeometry(frameIndex, reason):
+            return "DICOM SEG frame \(frameIndex) cannot be aligned to the base volume: \(reason)"
+        case let .frameSliceOutOfBounds(frameIndex, sliceIndex, baseDepth):
+            return "DICOM SEG frame \(frameIndex) maps to slice \(sliceIndex), outside base depth \(baseDepth)."
         }
     }
 }
@@ -135,7 +141,7 @@ public enum DicomSegmentationVolumeLayerBuilder {
             )
         }
 
-        let composition = try composeLabelmapVoxels(from: segmentation)
+        let composition = try composeLabelmapVoxels(from: segmentation, alignedTo: baseDataset)
         var imageData = baseDataset.imageData
         imageData.dimensions = VolumeDimensions(
             width: segmentation.columns,
@@ -187,12 +193,13 @@ public enum DicomSegmentationVolumeLayerBuilder {
     }
 
     private static func composeLabelmapVoxels(
-        from segmentation: DicomSegmentation
+        from segmentation: DicomSegmentation,
+        alignedTo baseDataset: VolumeDataset
     ) throws -> (voxels: [UInt16], depth: Int) {
         let pixelCount = segmentation.rows * segmentation.columns
-        let orderedKeys = orderedFrameKeys(for: segmentation.frames)
-        let keyToSlice: [String: Int] = Dictionary(uniqueKeysWithValues: orderedKeys.enumerated().map { ($0.element, $0.offset) })
-        var voxels = [UInt16](repeating: 0, count: pixelCount * orderedKeys.count)
+        let baseDepth = baseDataset.dimensions.depth
+        let fallbackSlices = fallbackSliceIndexes(for: segmentation.frames, baseDepth: baseDepth)
+        var voxels = [UInt16](repeating: 0, count: pixelCount * baseDepth)
 
         for frame in segmentation.frames {
             let values = frame.pixelData.storedValues
@@ -203,14 +210,104 @@ public enum DicomSegmentationVolumeLayerBuilder {
                     actual: values.count
                 )
             }
-            guard let slice = keyToSlice[frameKey(frame)] else { continue }
+            let slice = try sliceIndex(for: frame, alignedTo: baseDataset, fallbackSlices: fallbackSlices)
             let segmentValue = UInt16(clamping: frame.segmentNumber)
             let offset = slice * pixelCount
             for pixelIndex in 0..<pixelCount where values[pixelIndex] != 0 {
                 voxels[offset + pixelIndex] = segmentValue
             }
         }
-        return (voxels, max(1, orderedKeys.count))
+        return (voxels, baseDepth)
+    }
+
+    private static func sliceIndex(
+        for frame: DicomSegmentationFrame,
+        alignedTo baseDataset: VolumeDataset,
+        fallbackSlices: [String: Int]
+    ) throws -> Int {
+        if let position = frame.geometry?.imagePositionPatient {
+            return try sliceIndex(for: position, frameIndex: frame.index, alignedTo: baseDataset)
+        }
+
+        if let stackPosition = frame.geometry?.frameContent?.inStackPositionNumber {
+            return try validatedSliceIndex(
+                stackPosition - 1,
+                frameIndex: frame.index,
+                baseDepth: baseDataset.dimensions.depth
+            )
+        }
+
+        if let fallbackSlice = fallbackSlices[frameKey(frame)] {
+            return fallbackSlice
+        }
+
+        throw DicomSegmentationVolumeLayerBridgeError.invalidFrameGeometry(
+            frameIndex: frame.index,
+            reason: "missing Image Position (Patient) or In-Stack Position Number for a sparse or multi-segment SEG"
+        )
+    }
+
+    private static func sliceIndex(
+        for position: SIMD3<Double>,
+        frameIndex: Int,
+        alignedTo baseDataset: VolumeDataset
+    ) throws -> Int {
+        let indexPosition = baseDataset.imageData.worldToIndex *
+            SIMD4<Float>(Float(position.x), Float(position.y), Float(position.z), 1)
+        let rounded = SIMD3<Float>(
+            indexPosition.x.rounded(),
+            indexPosition.y.rounded(),
+            indexPosition.z.rounded()
+        )
+        guard isClose(indexPosition.x, rounded.x),
+              isClose(indexPosition.y, rounded.y),
+              isClose(indexPosition.z, rounded.z),
+              Int(rounded.x) == 0,
+              Int(rounded.y) == 0 else {
+            throw DicomSegmentationVolumeLayerBridgeError.invalidFrameGeometry(
+                frameIndex: frameIndex,
+                reason: "image position \(position) is not aligned with the base volume origin/spacing"
+            )
+        }
+        return try validatedSliceIndex(
+            Int(rounded.z),
+            frameIndex: frameIndex,
+            baseDepth: baseDataset.dimensions.depth
+        )
+    }
+
+    private static func validatedSliceIndex(
+        _ sliceIndex: Int,
+        frameIndex: Int,
+        baseDepth: Int
+    ) throws -> Int {
+        guard sliceIndex >= 0, sliceIndex < baseDepth else {
+            throw DicomSegmentationVolumeLayerBridgeError.frameSliceOutOfBounds(
+                frameIndex: frameIndex,
+                sliceIndex: sliceIndex,
+                baseDepth: baseDepth
+            )
+        }
+        return sliceIndex
+    }
+
+    private static func fallbackSliceIndexes(
+        for frames: [DicomSegmentationFrame],
+        baseDepth: Int
+    ) -> [String: Int] {
+        if baseDepth == 1 {
+            var slices: [String: Int] = [:]
+            for frame in frames where frame.geometry == nil {
+                slices[frameKey(frame)] = 0
+            }
+            return slices
+        }
+
+        guard Set(frames.map(\.segmentNumber)).count == 1 else { return [:] }
+        guard frames.allSatisfy({ $0.geometry == nil }) else { return [:] }
+        let orderedKeys = orderedFrameKeys(for: frames)
+        guard orderedKeys.count == baseDepth else { return [:] }
+        return Dictionary(uniqueKeysWithValues: orderedKeys.enumerated().map { ($0.element, $0.offset) })
     }
 
     private static func orderedFrameKeys(for frames: [DicomSegmentationFrame]) -> [String] {
@@ -265,6 +362,16 @@ public enum DicomSegmentationVolumeLayerBuilder {
 
     private static func clamp01(_ value: Float) -> Float {
         min(max(value, 0), 1)
+    }
+
+    /// Maximum acceptable deviation (in voxel index units) between the
+    /// world-to-index-projected SEG frame position and the nearest integer
+    /// voxel. 0.01 voxels tolerates floating-point round-off from the
+    /// matrix multiply without permitting a measurable misalignment.
+    private static let indexAlignmentTolerance: Float = 0.01
+
+    private static func isClose(_ lhs: Float, _ rhs: Float) -> Bool {
+        abs(lhs - rhs) <= indexAlignmentTolerance
     }
 
     private static func canExtractSurface(from dimensions: VolumeDimensions) -> Bool {
